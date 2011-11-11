@@ -1,0 +1,16 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>{{curDomain.defaultTitle }}</title>
+    <script type="text/javascript" src="/api/d/{{curTag}}{{ getCurCacheVer("agg/common.js", curTag) }}/agg/common.js"></script>
+    <script type="text/javascript" src="/api/d/{{curTag}}{{ getCurCacheVer("agg/cached.js", curTag) }}/agg/cached.js"></script>
+    <script type="text/javascript">
+      jv.doDispatch({loadVer:{{ '-1' if curTag == 'z' else 'null' }}, dname:'{{curDomain.name}}', cver:{{ config.configVersion }}, fver:{{config.fileVersion}} });
+    </script>
+  </head>
+  <body>
+  </body>
+</html>
+
+
