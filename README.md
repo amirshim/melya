@@ -3,6 +3,8 @@ Melya Framework for Google App Engine (Python)
 
 Melya is a framework for Google App Engine (GAE) that allows you to build websites using CoffeeScript, JavaScript, HTML, and Python.
 
+Documentation can be found [here](https://github.com/amirshim/melya/wiki)
+
 Features
 --------
 
@@ -18,4 +20,4 @@ Javascript packing of multiple modules in one, for fast page loads.
 
 Edit your site online, but still have your users see the stable version.  Push updates to everyone only when you want.
 
-Many more...
+And much more...
