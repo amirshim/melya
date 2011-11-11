@@ -1,3 +1,6 @@
+# Melya Framework for Google App Engine
+# (c) 2011 Amir Shimoni
+# Melya may be freely distributed under the MIT license.
 import email.Utils, mimetypes, time, re, inspect
 import webapp2,json,logging,os, zipfile
 from google.appengine.api import users,memcache

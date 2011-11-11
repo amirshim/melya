@@ -1,3 +1,6 @@
+# Melya Framework for Google App Engine
+# (c) 2011 Amir Shimoni
+# Melya may be freely distributed under the MIT license.
 import webapp2
 from jinja2 import Environment, Template, BaseLoader, TemplateNotFound
 import google.appengine.ext.db as db
