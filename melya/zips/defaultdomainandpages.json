@@ -1,0 +1,27 @@
+{
+   "domains":[
+      {
+         "regex":".*",
+         "order":100000.0,
+         "name":"catchall",
+         "defaultTitle":"Powered by the Melya framework"
+      }
+   ],
+   "pages":[
+      {
+         "regex":".*",
+         "fileName":"tmpl/catchall.html",
+         "flags":"jinja",
+         "order":100000.0,
+         "domainName":""
+      },
+      {
+         "regex":"/favicon.ico",
+         "fileName":"favicon.ico",
+         "flags":"",
+         "order":99999.0,
+         "domainName":""
+      }
+   ],
+   "success":true
+}
