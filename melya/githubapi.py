@@ -133,29 +133,6 @@ def github_redirectToOauth(req):
 
 # ----- api for initial update ------
 
-
-
-
-@ApiReq(allowGet=True)
-@RequireAdmin
-def github_TryToAddFile(req):
-    return
-    user = 'amirshim'
-    repo = 'testapi3'
-    ghat = datamodel.DB_ConfigData.get_by_key_name('github_oauth')
-
-    commit = getMasterCommit(user,repo)
-    base_tree_sha = commit.get('tree').get('sha')
-
-    newtreesha = addManyFilesToTree(user, repo, base_tree_sha, [('sub1/newfile6.txt', 'Text for the new file 6'), ('newfile7.txt', 'Text for the new file 7')], ghat)
-    #newtreesha = addFileToTree(user, repo, base_tree_sha, 'sub1/newfile5.txt', 'Text for the new file 5', ghat)
-    #newtreesha = addFileToTree(user, repo, commit.get('sha'), 'newfile4.txt', 'Text for the new file 4', ghat)
-    new_commit_sha = addNewCommit(user, repo, newtreesha, commit.get('sha'), 'Commit message 8', ghat)
-    isok = updateHeadMasterCommit(user, repo, new_commit_sha, ghat)
-    return RetType.JSONSUCCESS, {'ok':isok}
-
-
-
 @ApiReq(allowGet=True)
 @RequireAdmin
 def github_AddFileFromGitHub(req, user):
