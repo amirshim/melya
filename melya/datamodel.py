@@ -4,6 +4,8 @@
 import google.appengine.ext.db as db
 from utils import getGitBlobHash, getStrSortableHexNum
 
+class DB_ConfigData(db.Expando): pass
+
 class DB_User(db.Model):
     """
     Let GAE pick the key id, and use that as the user id.

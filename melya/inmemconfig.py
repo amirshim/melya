@@ -32,8 +32,13 @@ class InAppMemConfig(object):
         self.domains = self.UpdateDomains()
         self.pages = self.UpdatePages()
 
+        # used to cache functions that are executed and added dynamically see "dynamicapi.py"
+        # if the key begins with "." then it's the development version of the function.
+        self.dynamicApiCache = {} 
+
     @classmethod
     def UpdateDomains(cls):
+        # TODO: load from cache?
         res = datamodel.DB_Domains.all().order('-dateUpdated').get()
         if not res or res.dateUpdated == cls._lastDomainUpdate: return cls._domainsCache
         domains = datamodel.DB_Domains.all().order('order').fetch(1000)
@@ -44,6 +49,7 @@ class InAppMemConfig(object):
 
     @classmethod
     def UpdatePages(cls):
+        # TODO: load from cache?
         res = datamodel.DB_Pages.all().order('-dateUpdated').get()
         if not res or res.dateUpdated == cls._lastPageUpdate: return cls._pagesCache
         pages = datamodel.DB_Pages.all().order('order').fetch(1000)

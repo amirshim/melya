@@ -1,7 +1,6 @@
 # Melya Framework for Google App Engine
 # (c) 2011 Amir Shimoni
 # Melya may be freely distributed under the MIT license.
-from handlerhelpers import ApiReq, RetType, getUserAndIsAdmin, RequireAdmin, RequireAdminRaw
 import google.appengine.ext.db as db
 from google.appengine.api import users
 from utils import getGitBlobHash, getAllFromFromQuery,DB_SimpleToDict,chunks
@@ -9,6 +8,9 @@ from collections import defaultdict
 from gaesessions import get_current_session
 import datamodel,datetime,logging, os,json
 from filegen import forceCacheRebuild
+
+from handlerhelpers import ApiReq
+from handlerutils import RetType, getUserAndIsAdmin, RequireAdmin, RequireAdminRaw
 
 _fileVerKey = 'fver'
 
@@ -89,6 +91,54 @@ def admin_DoAdminStuff(req):
     html_get = ["""<a href="%s">%s</a><br/>""" % x for x in cmds_GET]
     return RetType.RAW, '\n'.join(html_post + html_get)
 
+def internalAddFile(filename, content, userkey, extra_tags=None, genFromFile=None, genFromVer=None):
+    """
+    extra_tags is a set like {'a','m'} - but usually either None or {'a'} - 'z' always gets added.
+    """
+    fn = filename
+    new_hash = getGitBlobHash(content)
+    theDataKey = datamodel.DB_FileContent.all(keys_only=True).filter('__key__ =', db.Key.from_path(u'DB_FileContent', new_hash)).get()
+
+    if not theDataKey:
+        theDataKey = datamodel.DB_FileContent(key_name = new_hash, data = db.Blob(content)).put()
+        hashAlreadyExists = False
+    else:
+        hashAlreadyExists = True
+
+    latestVersion = datamodel.DB_FileVersion.getMostRecent(fn, 'z', keys_only=True)
+
+    if latestVersion and latestVersion.parent().name() == new_hash:
+        return False, {'text':'Failed because the latest version has the same hash'}
+
+    if genFromFile and genFromVer:
+        genFrom = datamodel.DB_FileVersion.getSpecificVersion(genFromFile, 'z', int(genFromVer), keys_only=True)
+        if not genFrom:
+            return False, {'text':'Generated from version doesn\'t exist'}
+    else:
+        genFrom = None
+
+    isFirstVersion = False if latestVersion else True
+
+    nextVersionNum = datamodel.DB_JV_AtomicCounter.GetNextCounter(_fileVerKey)
+
+    if isFirstVersion:
+        tags = {'z', 'a'}
+    else:
+        tags = {'z'}
+
+    if extra_tags: tags.update(extra_tags)
+
+    newFileVer = datamodel.DB_FileVersion(parent=theDataKey, key_name=str(nextVersionNum),
+                                                filename=fn,version=nextVersionNum,uid=userkey.id(),tags=list(tags),
+                                                generatedFrom=genFrom)
+
+
+    newFileVer.put()
+
+    forceCacheRebuild(fn, 'z')
+
+    return True, {'ver': nextVersionNum, 'hash':new_hash, 'isFirstVersion':isFirstVersion, 'hashAlreadyExists':hashAlreadyExists, 'filename':fn}
+
 @ApiReq()
 @RequireAdmin
 def admin_UploadFileHandler(req, user): # user is passed by RequireAdmin
@@ -105,49 +155,12 @@ def admin_UploadFileHandler(req, user): # user is passed by RequireAdmin
         content = content.encode('utf8')
     else:
         content = str(content) # just in case?
-    new_hash = getGitBlobHash(content)
-    theDataKey = datamodel.DB_FileContent.all(keys_only=True).filter('__key__ =', db.Key.from_path(u'DB_FileContent', new_hash)).get()
-
-    if not theDataKey:
-        theDataKey = datamodel.DB_FileContent(key_name = new_hash, data = db.Blob(content)).put()
-        hashAlreadyExists = False
-    else:
-        hashAlreadyExists = True
-
-    latestVersion = datamodel.DB_FileVersion.getMostRecent(fn, 'z', keys_only=True)
-
-    if latestVersion and latestVersion.parent().name() == new_hash:
-        return RetType.JSONFAIL, {'text':'Failed because the latest version has the same hash'}
-
-    genFromFile = req.get('generatedFromFile')
-    genFromVer = req.get('generatedFromVer')
-
-    if genFromFile and genFromVer:
-        genFrom = datamodel.DB_FileVersion.getSpecificVersion(genFromFile, 'z', int(genFromVer), keys_only=True)
-        if not genFrom:
-            return RetType.JSONFAIL, {'text':'Generated from version doesn\'t exist'}
-    else:
-        genFrom = None
-
-    isFirstVersion = False if latestVersion else True
-
-    nextVersionNum = datamodel.DB_JV_AtomicCounter.GetNextCounter(_fileVerKey)
-
-    if isFirstVersion:
-        tags = ['z', 'a']
-    else:
-        tags = ['z']
-
-    newFileVer = datamodel.DB_FileVersion(parent=theDataKey, key_name=str(nextVersionNum),
-                                                filename=fn,version=nextVersionNum,uid=user.key().id(),tags=tags,
-                                                generatedFrom=genFrom)
 
 
-    newFileVer.put()
+    success, extra_dict = internalAddFile(fn, content, user.key(), genFromFile = req.get('generatedFromFile'), genFromVer = req.get('generatedFromVer'))
 
-    forceCacheRebuild(fn, 'z')
-
-    return RetType.JSONSUCCESS, {'ver': nextVersionNum, 'hash':new_hash, 'isFirstVersion':isFirstVersion, 'hashAlreadyExists':hashAlreadyExists, 'filename':fn}
+    if not success: return RetType.JSONFAIL, extra_dict
+    return RetType.JSONSUCCESS, extra_dict
 
 @ApiReq()
 @RequireAdmin

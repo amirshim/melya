@@ -12,81 +12,17 @@ from filegen import getCurCacheBlob, getCurCacheVer, getRawFileData
 from gaesessions import get_current_session
 from functools import wraps
 
+from handlerutils import RetType, getUserAndIsAdmin, RequireAdmin, RequireAdminRaw
+
+import dynamicapi
+
+# this should be moved into config store...
+html_unit_url = None # set this to something like 'http://hu.myapplicationnamegoeshere.appspot.com/hu?url=%s'
+
 jvDollarEscapeRe = re.compile(r'(\$\$jv:([^\$]+)\$\$)')
 _memcache = memcache.Client()
 _webFuncs = {}
 _webFuncsGet = {}
-
-
-class RetType:
-    """
-    This was going to be a simple enum, but decided I could simply make it the funcions...
-    """
-    @classmethod
-    def JSONSUCCESS(cls, self, json_obj = None):
-        if json_obj:
-            json_obj['success'] = True
-            return self.response.out.write(json.dumps(json_obj, check_circular=False, separators=(',',':')))
-        else:
-            return self.response.out.write('{"success":true}')
-
-    @classmethod
-    def JSONFAIL(cls, self, json_obj = None):
-        if json_obj:
-            json_obj['success'] = False
-            return self.response.out.write(json.dumps(json_obj, check_circular=False, separators=(',',':')))
-        else:
-            return self.response.out.write('{"success":false}')
-
-    @classmethod
-    def REDIRECT(cls, self, redir = None):
-        if not redir:
-            return self.redirect('/')
-        else:
-            return self.redirect(redir)
-
-    @classmethod
-    def RAW(cls, self, data = None):
-        return self.response.out.write(data)
-
-    @classmethod
-    def NOTFOUND(cls, self):
-        return self.response.set_status(404)
-
-    @classmethod
-    def HEADERSANDRAW(cls, self, headers=None, data=None, ):
-        if headers:
-            for x,y in headers.items():
-                self.response.headers[x] = y
-        self.response.out.write(data)
-
-def getUserAndIsAdmin(req):
-    """
-    return (User, isAdmin bool)
-    """
-    guser = users.get_current_user()
-    if not guser: return None, False
-    usergkey = 'g'+str(guser.user_id())
-    res = datamodel.DB_UserLoginAssoc.get_by_key_name(usergkey)
-    if not res: return None, False
-    muser = datamodel.DB_User.get_by_id(res.uid)
-    return muser, users.is_current_user_admin()
-
-def GenerateRequireAdminLoginDelegate(failReturnValue):
-    def RequireAdminFunc(func):
-        expectsUser = 'user' in inspect.getargspec(func)[0]
-        @wraps(func)
-        def wrapped(req):
-            user, isAdmin = getUserAndIsAdmin(req)
-            if not isAdmin: return failReturnValue
-            if expectsUser:
-                return func(req, user=user)
-            return func(req)
-        return wrapped
-    return RequireAdminFunc
-
-RequireAdmin = GenerateRequireAdminLoginDelegate((RetType.JSONFAIL, {'needlogin':True}))
-RequireAdminRaw = GenerateRequireAdminLoginDelegate((RetType.RAW, 'Requires admin login'))
 
 # the decorator 
 def ApiReq(urlName = None, allowGet=False):
@@ -104,16 +40,15 @@ def ApiReq(urlName = None, allowGet=False):
     return wwrap
 
 
-# these are the built in APIs
+# these are the built in APIs - don't remove
 import melya.fileapi
 import melya.adminapi
+import melya.githubapi
 
 
 def SetCachingHeadersForResponse(response, max_age = 600):
     response.headers['Expires'] = email.Utils.formatdate(time.time() + max_age, usegmt=True)
     response.headers['Cache-Control'] = 'public, max-age=%d' % max_age
-
-
 
 class ZipHandler(webapp2.RequestHandler):
   """Request handler serving static files from zipfiles. - copied from zipserve"""
@@ -180,6 +115,9 @@ class GeneralApiHandler(ZipHandler): #webapp2.RequestHandler):
         else:
             cmd = None
 
+        if not cmd:
+            cmd = dynamicapi.getApiCmd(command, isPost, self.request)
+
         if cmd:
             res = cmd(self.request)
             if not res:
@@ -188,7 +126,6 @@ class GeneralApiHandler(ZipHandler): #webapp2.RequestHandler):
             if not isinstance(res, tuple):
                 return res(self)
             return res[0](self, *res[1:])
-
 
         return self.response.set_status(404)
 
@@ -219,9 +156,6 @@ class GeneralApiHandler(ZipHandler): #webapp2.RequestHandler):
         file = os.path.join(os.path.dirname(__file__), 'zips/'+ prefix + '.zip')
         self.ServeFromZipFile(file , name)
 
-
-
-
 class GeneralPageHandler(webapp2.RequestHandler):
     def get(self):
         InAppMemConfig.UpdateIfNeeded()
@@ -248,12 +182,15 @@ class GeneralPageHandler(webapp2.RequestHandler):
             self.response.out.write('Page not found: %s' % curPath)
             return
 
+        if html_unit_url and self.request.get('_escaped_fragment_', None) != None or self.request.get('nojs', None) == '1':
+            return self.serveSEOContent(curDomain, curPage)
+
         isHead = not session or session.get('jvdevver') != '-1'
 
         curTag = 'a' if isHead else 'z'
 
         if 'jinja' in curPage._parsedFlagList:
-            res = renderWithJinja(curPage.fileName, isHead=isHead, curPage=curPage, curDomain=curDomain, config=InAppMemConfig.Current(), curTag=curTag)
+            res = renderWithJinja(curPage.fileName, isHead=isHead, curPage=curPage, curDomain=curDomain, config=InAppMemConfig.Current(), curTag=curTag, webreq=self.request)
         elif 'melya' in curPage._parsedFlagList: # Melya's js parsing...
             res = getCurCacheBlob(curPage.fileName, curTag, InAppMemConfig.Current().fileVersion)
         else:
@@ -268,6 +205,19 @@ class GeneralPageHandler(webapp2.RequestHandler):
 
 
         return self.response.out.write(res)
+
+    def serveSEOContent(self, curDomain, curPage):
+        url = self.request.path_url
+        cutoff = url.find('://')
+        if cutoff >= 0:
+            url = url[cutoff+3:]
+        url = html_unit_url % url
+
+        from google.appengine.api import urlfetch
+        result = urlfetch.fetch(url, deadline=60)
+        if result.status_code == 200:
+          self.response.out.write(result.content)
+
 
     @classmethod
     def resolveDomain(cls, curHost):
